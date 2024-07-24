@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"github.com/sebzz2k2/krompton/config"
 	"io"
 	"log"
 	"net"
 	"strconv"
+	"strings"
 )
 
 func respond(command string, conn net.Conn) error {
@@ -17,14 +19,20 @@ func respond(command string, conn net.Conn) error {
 	return nil
 }
 
-func readCommand(conn net.Conn) (string, error) {
+func tokenize(input string) []string {
+	input = strings.TrimSpace(input)
+	tokens := strings.Fields(input)
+	return tokens
+}
+
+func handleInput(reader *bufio.Reader) ([]string, error) {
 	// reads from tcp connection
-	var buffer []byte = make([]byte, 512)
-	n, err := conn.Read(buffer[:])
+	message, err := reader.ReadString('\n')
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(buffer[:n]), nil
+	tokens := tokenize(message)
+	return tokens, nil
 }
 
 func RunSyncTcp() {
@@ -36,15 +44,14 @@ func RunSyncTcp() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if err != nil {
-				panic(err)
-			}
+			panic(err)
 		}
 		concurrentUser++
 		log.Printf("Accepted connection from %s", conn.RemoteAddr())
 
 		for {
-			cmd, err := readCommand(conn)
+			reader := bufio.NewReader(conn)
+			cmds, err := handleInput(reader)
 			if err != nil {
 				conn.Close()
 				concurrentUser--
@@ -53,9 +60,11 @@ func RunSyncTcp() {
 					break
 				}
 			}
-			log.Printf("Command: %s", cmd)
-			if err = respond(cmd, conn); err != nil {
-				log.Println(err)
+
+			if cmds[0] == "ping" {
+				respond("pong\n", conn)
+			} else {
+				respond("Unknown Command\n", conn)
 			}
 		}
 	}
