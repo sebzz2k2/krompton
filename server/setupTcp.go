@@ -1,38 +1,40 @@
 package server
 
 import (
-	"bufio"
-	"github.com/sebzz2k2/krompton/config"
 	"io"
 	"log"
 	"net"
 	"strconv"
-	"strings"
+
+	"github.com/sebzz2k2/krompton/config"
+	"github.com/sebzz2k2/krompton/core"
 )
 
-func respond(command string, conn net.Conn) error {
-	// writes to tcp connection
-	_, err := conn.Write([]byte(command))
-	if err != nil {
-		return err
+func respond(cmd *core.KromptonCmd, c io.ReadWriter) error {
+	var b []byte
+	switch cmd.Cmd {
+	case "PING":
+		b = core.Encode("PONG")
 	}
-	return nil
+	_, err := c.Write(b)
+	return err
 }
 
-func tokenize(input string) []string {
-	input = strings.TrimSpace(input)
-	tokens := strings.Fields(input)
-	return tokens
-}
-
-func handleInput(reader *bufio.Reader) ([]string, error) {
-	// reads from tcp connection
-	message, err := reader.ReadString('\n')
+func readCommand(c net.Conn) (*core.KromptonCmd, error) {
+	var buf []byte = make([]byte, 512)
+	n, err := c.Read(buf[:])
 	if err != nil {
 		return nil, err
 	}
-	tokens := tokenize(message)
-	return tokens, nil
+	decoded, err := core.DecodeArrayStr(buf[:n])
+	if err != nil {
+		return nil, err
+	}
+	return &core.KromptonCmd{
+		Cmd:  decoded[0],
+		Args: decoded[1:],
+	}, nil
+
 }
 
 func RunSyncTcp() {
@@ -50,22 +52,13 @@ func RunSyncTcp() {
 		log.Printf("Accepted connection from %s", conn.RemoteAddr())
 
 		for {
-			reader := bufio.NewReader(conn)
-			cmds, err := handleInput(reader)
-			if err != nil {
-				conn.Close()
-				concurrentUser--
-				log.Printf("Connection closed by %s", conn.RemoteAddr())
-				if err == io.EOF {
-					break
-				}
+			cmd, err := readCommand(conn)
+			concurrentUser--
+			if err == io.EOF {
+				break
 			}
-
-			if cmds[0] == "ping" {
-				respond("pong\n", conn)
-			} else {
-				respond("Unknown Command\n", conn)
-			}
+			respond(cmd, conn)
 		}
+
 	}
 }
